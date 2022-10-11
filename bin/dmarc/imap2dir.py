@@ -43,25 +43,25 @@ class Imap2Dir(object):
             tmp_dir,
             opt_use_ssl,
             opt_global_account,
+            opt_imap_username,
             opt_oauth2_authority,
             opt_oauth2_scope,
             opt_imap_mailbox,
-            opt_imap_folder,
             opt_validate_dkim,
             opt_batch_size):
             
         # Instance variables:
         self.helper = helper
         self.opt_imap_server = opt_imap_server
-        self.opt_imap_mailbox = opt_imap_mailbox
-        self.opt_imap_folder = 'INBOX' if opt_imap_folder is None else opt_imap_folder
-        self.opt_validate_dkim = opt_validate_dkim
+        self.tmp_dir = tmp_dir
         self.opt_use_ssl = opt_use_ssl
         self.opt_global_account = opt_global_account
+        self.opt_imap_username = opt_imap_username    
         self.opt_oauth2_authority = opt_oauth2_authority
         self.opt_oauth2_scope = opt_oauth2_scope
+        self.opt_imap_mailbox = 'INBOX' if opt_imap_mailbox is None else opt_imap_mailbox
+        self.opt_validate_dkim = opt_validate_dkim
         self.opt_batch_size = 100 if opt_batch_size is None else opt_batch_size
-        self.tmp_dir = tmp_dir
         self.server = None
 
     def get_imap_connectivity(self):
@@ -133,23 +133,37 @@ class Imap2Dir(object):
                         authority = self.opt_oauth2_authority
                     )
 
-                result = None
-                
-                result = app.acquire_token_for_client(self.opt_oauth2_scope)
+                self.helper.log_debug(
+                        'get_dmarc_messages: acquiring token for client %s to access scope %s' %
+                        (self.opt_global_account["username"],self.opt_oauth2_scope))               
 
+                result = app.acquire_token_for_client(self.opt_oauth2_scope)
+                        
                 if "access_token" in result:
                     self.server.oauth2_login(
-                        self.opt_imap_mailbox,
+                        self.opt_imap_username,
                         result['access_token'])
+                    self.helper.log_debug(
+                        'get_dmarc_messages: successful login to %s using acquired token' %
+                        (self.opt_imap_username))
+                else:
+                    self.helper.log_error(
+                        'get_dmarc_messages: No access token found for client ID: %s  -  result %s' %
+                        (self.opt_global_account["username"],result))
+                    
             ###
+            
+            self.helper.log_debug(
+                'get_dmarc_messages: will open folder %s in %s' %
+                (self.opt_imap_mailbox,self.opt_imap_username))
 
-            info = self.server.select_folder(self.opt_imap_folder)
+            info = self.server.select_folder(self.opt_imap_mailbox)
             self.helper.log_info(
-                'get_dmarc_messages: %s messages in folder %s' % (info.get(b'EXISTS', -1) , self.opt_imap_folder))
+                'get_dmarc_messages: %s messages in folder %s' % (info.get(b'EXISTS', -1) , self.opt_imap_mailbox))
             messages = self.server.search('SUBJECT "Report domain:"')
             self.helper.log_info(
                 'get_dmarc_messages: %d messages in folder %s match subject "Report domain:"' %
-                (len(messages), self.opt_imap_folder))
+                (len(messages), self.opt_imap_mailbox))
         return messages
 
     def get_dmarc_message_bodies(self, messages):
